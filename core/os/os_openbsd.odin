@@ -343,7 +343,7 @@ AT_REMOVEDIR        :: 0x08
 
 @(default_calling_convention="c")
 foreign libc {
-	@(link_name="__error")        __error              :: proc() -> ^c.int ---
+	@(link_name="__errno")        __error              :: proc() -> ^c.int ---
 
 	@(link_name="fork")           _unix_fork           :: proc() -> pid_t ---
 	@(link_name="getthrid")       _unix_getthrid       :: proc() -> int ---
@@ -621,9 +621,9 @@ stdin:  Handle = 0
 stdout: Handle = 1
 stderr: Handle = 2
 
-/* TODO(zangent): Implement these!                                                                                
-last_write_time :: proc(fd: Handle) -> File_Time {}                                                               
-last_write_time_by_name :: proc(name: string) -> File_Time {}                                                     
+/* TODO(zangent): Implement these!
+last_write_time :: proc(fd: Handle) -> File_Time {}
+last_write_time_by_name :: proc(name: string) -> File_Time {}
 */
 @(require_results)
 last_write_time :: proc(fd: Handle) -> (time: File_Time, err: Error) {
@@ -738,7 +738,7 @@ _readlink :: proc(path: string) -> (string, Error) {
 			buf = make([]byte, bufsz)
 		} else {
 			return strings.string_from_ptr(&buf[0], rc), nil
-		}	
+		}
 	}
 }
 
