@@ -756,7 +756,7 @@ gb_internal void futex_signal(Futex *f) {
 
 			perror("Futex wake");
 			GB_PANIC("futex wake fail");
-		} else if (ret == 1) {
+		} else {
 			return;
 		}
 	}
@@ -773,7 +773,7 @@ gb_internal void futex_broadcast(Futex *f) {
 
 			perror("Futex wake");
 			GB_PANIC("futex wake fail");
-		} else if (ret == 1) {
+		} else {
 			return;
 		}
 	}
@@ -783,7 +783,7 @@ gb_internal void futex_wait(Futex *f, Footex val) {
 	for (;;) {
 		int ret = futex((volatile uint32_t *)f, FUTEX_WAIT | FUTEX_PRIVATE_FLAG, val, NULL, NULL);
 		if (ret == -1) {
-			if (*f != val) {
+			if (errno == EAGAIN) {
 				return;
 			}
 
@@ -1010,19 +1010,19 @@ struct _Spinlock {
 };
 
 struct Futex_Waitq;
- 
+
 struct Futex_Waiter {
 	_Spinlock lock;
 	pthread_t thread;
 	Futex *futex;
 	Futex_Waitq *waitq;
-	Futex_Waiter *prev, *next;	
+	Futex_Waiter *prev, *next;
 };
- 
+
 struct Futex_Waitq {
 	_Spinlock lock;
 	Futex_Waiter list;
- 
+
 	void init() {
 		auto head = &list;
 		head->prev = head->next = head;
@@ -1031,7 +1031,7 @@ struct Futex_Waitq {
 
 // FIXME: This approach may scale badly in the future,
 // possible solution - hash map (leads to deadlocks now).
- 
+
 Futex_Waitq g_waitq = {
 	.lock = ATOMIC_FLAG_INIT,
 	.list = {
@@ -1039,17 +1039,17 @@ Futex_Waitq g_waitq = {
 		.next = &g_waitq.list,
 	},
 };
- 
+
 Futex_Waitq *get_waitq(Futex *f) {
 	// Future hash map method...
 	return &g_waitq;
 }
- 
+
 void futex_signal(Futex *f) {
 	auto waitq = get_waitq(f);
- 
+
 	waitq->lock.lock();
- 
+
 	auto head = &waitq->list;
 	for (auto waiter = head->next; waiter != head; waiter = waiter->next) {
 		if (waiter->futex != f) {
@@ -1059,15 +1059,15 @@ void futex_signal(Futex *f) {
 		pthread_kill(waiter->thread, SIGCONT);
 		return;
 	}
- 
+
 	waitq->lock.unlock();
 }
- 
+
 void futex_broadcast(Futex *f) {
 	auto waitq = get_waitq(f);
- 
+
 	waitq->lock.lock();
- 
+
 	auto head = &waitq->list;
 	for (auto waiter = head->next; waiter != head; waiter = waiter->next) {
 		if (waiter->futex != f) {
@@ -1081,10 +1081,10 @@ void futex_broadcast(Futex *f) {
 			pthread_kill(waiter->thread, SIGCONT);
 		}
 	}
- 
+
 	waitq->lock.unlock();
 }
- 
+
 void futex_wait(Futex *f, Footex val) {
 	Futex_Waiter waiter;
 	waiter.thread = pthread_self();
@@ -1105,16 +1105,16 @@ void futex_wait(Futex *f, Footex val) {
 	waiter.waitq = waitq;
 	waiter.lock.init();
 	waiter.lock.lock();
- 
+
 	auto head = &waitq->list;
 	waiter.prev = head->prev;
 	waiter.next = head;
 	waiter.prev->next = &waiter;
 	waiter.next->prev = &waiter;
- 
+
 	waiter.prev->next = &waiter;
 	waiter.next->prev = &waiter;
- 
+
 	sigset_t old_mask, mask;
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCONT);
@@ -1139,12 +1139,12 @@ void futex_wait(Futex *f, Footex val) {
 				waiter.lock.lock();
 			}
 	}
- 
+
 	waiter.prev->next = waiter.next;
 	waiter.next->prev = waiter.prev;
- 
+
 	pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
- 
+
 	waiter.lock.unlock();
 	waitq->lock.unlock();
 }
