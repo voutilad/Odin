@@ -30,7 +30,7 @@ gb_internal void linker_data_init(LinkerData *ld, CheckerInfo *info, String cons
 
 #if defined(GB_SYSTEM_OSX)
 	ld->needs_system_library_linked = 0;
-#endif 
+#endif
 
 	if (build_context.out_filepath.len == 0) {
 		ld->output_name = remove_directory_from_path(init_fullpath);
@@ -431,17 +431,17 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 			//                files can be passed with -l:
 			gbString lib_str = gb_string_make(heap_allocator(), "-L/");
 			defer (gb_string_free(lib_str));
-			
+
 			StringSet asm_files = {};
 			string_set_init(&asm_files, 64);
 			defer (string_set_destroy(&asm_files));
-			
+
 			StringSet min_libs_set = {};
 			string_set_init(&min_libs_set, 64);
 			defer (string_set_destroy(&min_libs_set));
 
 			String prev_lib = {};
-			
+
 			for (Entity *e : gen->foreign_libraries) {
 				GB_ASSERT(e->kind == Entity_LibraryName);
 				// NOTE(bill): Add these before the linking values
@@ -548,7 +548,7 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 								LIT(obj_format),
 								LIT(obj_file),
 								LIT(build_context.extra_assembler_flags)
-							);						
+							);
 							if (result) {
 								gb_printf_err("executing `nasm` to assemble foreing import of %.*s failed.\n\tSuggestion: `nasm` does not ship with the compiler and should be installed with your system's package manager.\n", LIT(asm_file));
 								return result;
@@ -617,6 +617,8 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 			}
 
 			gbString object_files = gb_string_make(heap_allocator(), "");
+
+
 			defer (gb_string_free(object_files));
 			for (String object_path : gen->output_object_paths) {
 				object_files = gb_string_append_fmt(object_files, "\"%.*s\" ", LIT(object_path));
@@ -709,7 +711,7 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 				if (build_context.metrics.os == TargetOs_darwin) {
 					link_settings = gb_string_appendc(link_settings, "-Wl,-rpath,@loader_path ");
 				} else {
-					link_settings = gb_string_appendc(link_settings, "-Wl,-rpath,\\$ORIGIN ");
+					// link_settings = gb_string_appendc(link_settings, "-Wl,-rpath,\\$ORIGIN ");
 				}
 			}
 
@@ -724,10 +726,13 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 				}
 			}
 
-			gbString link_command_line = gb_string_make(heap_allocator(), clang_path);
+			gbString link_command_line = gb_string_make(heap_allocator(), "ld");
 			defer (gb_string_free(link_command_line));
 
-			link_command_line = gb_string_appendc(link_command_line, " -Wno-unused-command-line-argument ");
+			gb_printf("%s: link_command_line now: %s\n", __func__, link_command_line);
+			link_command_line = gb_string_appendc(link_command_line, " -z nobtcfi  -e __start --eh-frame-hdr -Bdynamic -dynamic-linker /usr/libexec/ld.so /usr/lib/crt0.o /usr/lib/crtbegin.o -L/usr/lib -L/usr/local/lib -lm ");
+
+			// link_command_line = gb_string_appendc(link_command_line, " -Wno-unused-command-line-argument ");
 			link_command_line = gb_string_appendc(link_command_line, object_files);
 			link_command_line = gb_string_append_fmt(link_command_line, " -o \"%.*s\" ", LIT(output_filename));
 			link_command_line = gb_string_append_fmt(link_command_line, " %s ", platform_lib_str);
@@ -736,7 +741,12 @@ gb_internal i32 linker_stage(LinkerData *gen) {
 			link_command_line = gb_string_append_fmt(link_command_line, " %.*s ", LIT(build_context.extra_linker_flags));
 			link_command_line = gb_string_append_fmt(link_command_line, " %s ", link_settings);
 
-			if (build_context.linker_choice == Linker_lld) {
+			link_command_line = gb_string_appendc(link_command_line, "-lc++ -lc++abi -lpthread -lm -lcompiler_rt /usr/lib/crtend.o ");
+
+			if (build_context.metrics.os == TargetOs_openbsd) {
+				gb_printf("%s: linker commandline:\n---\n%s\n---\n", __func__, link_command_line);
+				result = system_exec_command_line_app("ld", link_command_line);
+			} if (build_context.linker_choice == Linker_lld) {
 				link_command_line = gb_string_append_fmt(link_command_line, " -fuse-ld=lld");
 				result = system_exec_command_line_app("lld-link", link_command_line);
 			} else {
